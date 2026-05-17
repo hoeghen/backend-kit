@@ -9,6 +9,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-functions-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-check-compat.js"></script>
 
   <!-- Google API client (for Drive) -->
   <script src="https://apis.google.com/js/api.js"></script>
@@ -261,6 +262,10 @@
         <label>Functions Region</label>
         <input type="text" id="cfg-region" placeholder="us-central1" value="us-central1" />
       </div>
+      <div>
+        <label>reCAPTCHA v3 Site Key <small>(App Check — public key)</small></label>
+        <input type="text" id="cfg-recaptcha" placeholder="6Lc..." />
+      </div>
     </div>
     <div class="row">
       <button class="btn btn-primary" onclick="saveConfig()">💾 Save & Initialise</button>
@@ -280,6 +285,19 @@
 
 <!-- ── Service cards ──────────────────────────────────── -->
 <div class="cards">
+
+  <!-- App Check -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><span class="icon">🛡️</span> App Check</div>
+      <div class="status-dot" id="dot-appcheck"></div>
+    </div>
+    <div class="card-body">
+      <p style="font-size:.82rem;color:var(--muted)">Proves this request comes from your app, not a script that copied your Firebase config. Requires a reCAPTCHA v3 site key.</p>
+      <button class="btn btn-primary" onclick="testAppCheck()">Verify token</button>
+      <div class="result" id="result-appcheck">Waiting…</div>
+    </div>
+  </div>
 
   <!-- Firebase connectivity -->
   <div class="card">
@@ -379,7 +397,7 @@ let driveTokenClient, driveAccessToken = null;
 // ─────────────────────────────────────────────────────────────
 // Config helpers
 // ─────────────────────────────────────────────────────────────
-const FIELDS = ['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId','clientId','region'];
+const FIELDS = ['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId','clientId','region','recaptcha'];
 
 function loadConfig() {
   const saved = JSON.parse(localStorage.getItem('bk-config') || '{}');
@@ -435,6 +453,24 @@ function _init(cfg) {
   auth      = firebase.auth();
   functions = firebase.app().functions(cfg.region || 'us-central1');
 
+  // App Check — initialise if a reCAPTCHA site key was provided
+  if (cfg.recaptcha) {
+    try {
+      firebase.appCheck().activate(
+        new firebase.appCheck.ReCaptchaV3Provider(cfg.recaptcha),
+        true // auto-refresh tokens
+      );
+      dot('appcheck', 'ok');
+      setResult('appcheck', 'ok', '✓ App Check initialised with reCAPTCHA v3.\nClick "Verify token" to fetch and inspect a token.');
+    } catch(e) {
+      dot('appcheck', 'error');
+      setResult('appcheck', 'error', 'App Check init failed: ' + e.message);
+    }
+  } else {
+    dot('appcheck', '');
+    setResult('appcheck', '', 'No reCAPTCHA site key set — App Check is inactive.\nAdd your key in config to enable it.');
+  }
+
   auth.onAuthStateChanged(user => {
     const dot  = document.getElementById('auth-dot');
     const info = document.getElementById('auth-info');
@@ -472,6 +508,25 @@ async function testFirebase() {
   } catch(e) {
     setResult('firebase', 'error', e.message);
     dot('firebase', 'error');
+  }
+}
+
+async function testAppCheck() {
+  if (!app) return setResult('appcheck', 'error', 'Save config first.');
+  const cfg = readConfig();
+  if (!cfg.recaptcha) return setResult('appcheck', 'error', 'Add your reCAPTCHA v3 site key in config first.');
+  dot('appcheck', 'pending');
+  setResult('appcheck', '', 'Requesting App Check token…');
+  try {
+    const result = await firebase.appCheck().getToken(true);
+    const preview = result.token.slice(0, 40) + '…';
+    setResult('appcheck', 'ok',
+      `✓ Token received — your app is verified.\n\nToken preview: ${preview}\nExpires      : ${new Date(result.expireTimeMillis).toLocaleTimeString()}\n\nThis token is automatically attached to every Firebase callable — no extra code needed.`
+    );
+    dot('appcheck', 'ok');
+  } catch(e) {
+    setResult('appcheck', 'error', e.message);
+    dot('appcheck', 'error');
   }
 }
 

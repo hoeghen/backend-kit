@@ -1,1 +1,1 @@
-export { getFirebaseApp, type FirebaseConfig } from "./client.js";
+export { getFirebaseApp, initFirebaseAppCheck, initFirebaseAppCheckDebug, type FirebaseConfig, type AppCheckConfig } from "./client.js";

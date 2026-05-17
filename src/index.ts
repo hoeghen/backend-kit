@@ -1,5 +1,5 @@
-// Firebase initialisation
-export { getFirebaseApp, type FirebaseConfig } from "./firebase/index.js";
+// Firebase initialisation + App Check
+export { getFirebaseApp, initFirebaseAppCheck, initFirebaseAppCheckDebug, type FirebaseConfig, type AppCheckConfig } from "./firebase/index.js";
 
 // Google Drive
 export {

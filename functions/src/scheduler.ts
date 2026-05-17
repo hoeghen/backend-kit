@@ -5,18 +5,28 @@
  * by the Firebase runtime (Application Default Credentials) — no secret
  * needs to be set manually.
  *
- * Replace QUEUE_NAME, LOCATION, and PROJECT_ID with your values.
+ * App Check:
+ *   enforceAppCheck: true rejects any request that did not come from your
+ *   registered app.
+ *
+ * Rate limiting:
+ *   Each user may have at most MAX_ACTIVE_TASKS active tasks at once.
+ *   Active task IDs are tracked in Firestore under scheduledTasks/{uid}.
  */
 
 import * as functions from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
+import * as admin from "firebase-admin";
 import { CloudTasksClient } from "@google-cloud/tasks";
 
-const PROJECT_ID = process.env["GCLOUD_PROJECT"] ?? "your-project-id";
-const LOCATION = "us-central1"; // must match your Functions region
-const QUEUE_NAME = "default";
+if (!admin.apps.length) admin.initializeApp();
+const db = admin.firestore();
 
-/** Only these function names may be invoked via scheduleTask. */
+const PROJECT_ID     = process.env["GCLOUD_PROJECT"] ?? "your-project-id";
+const LOCATION       = "us-central1";
+const QUEUE_NAME     = "default";
+const MAX_ACTIVE_TASKS = 10;
+
 const ALLOWED_TARGET_FUNCTIONS = new Set(["sendReminderEmail", "generateWeeklyReport"]);
 
 const tasksClient = new CloudTasksClient();
@@ -32,67 +42,94 @@ interface CancelTaskPayload {
   taskId: string;
 }
 
-export const scheduleTaskFn = functions.onCall(async (request) => {
-  if (!request.auth) {
-    throw new functions.HttpsError("unauthenticated", "Must be signed in to schedule tasks.");
-  }
+export const scheduleTaskFn = functions.onCall(
+  { enforceAppCheck: true },
+  async (request) => {
+    if (!request.auth) {
+      throw new functions.HttpsError("unauthenticated", "Must be signed in to schedule tasks.");
+    }
 
-  const { taskName, scheduleTime, data, targetFunction } = request.data as ScheduleTaskPayload;
+    const uid = request.auth.uid;
+    const { taskName, scheduleTime, data, targetFunction } = request.data as ScheduleTaskPayload;
 
-  if (!ALLOWED_TARGET_FUNCTIONS.has(targetFunction)) {
-    throw new functions.HttpsError(
-      "permission-denied",
-      `targetFunction '${targetFunction}' is not in the allowlist.`
-    );
-  }
+    if (!ALLOWED_TARGET_FUNCTIONS.has(targetFunction)) {
+      throw new functions.HttpsError(
+        "permission-denied",
+        `targetFunction '${targetFunction}' is not in the allowlist.`
+      );
+    }
 
-  const scheduleDate = new Date(scheduleTime);
-  if (isNaN(scheduleDate.getTime()) || scheduleDate <= new Date()) {
-    throw new functions.HttpsError("invalid-argument", "scheduleTime must be a future ISO-8601 date.");
-  }
+    const scheduleDate = new Date(scheduleTime);
+    if (isNaN(scheduleDate.getTime()) || scheduleDate <= new Date()) {
+      throw new functions.HttpsError("invalid-argument", "scheduleTime must be a future ISO-8601 date.");
+    }
 
-  const parent = tasksClient.queuePath(PROJECT_ID, LOCATION, QUEUE_NAME);
+    // ── Rate limit: max active tasks per user ──────────────────────────────
+    const userTasksRef = db.doc(`scheduledTasks/${uid}`);
+    const snap = await userTasksRef.get();
+    const activeTasks: string[] = snap.data()?.["taskIds"] ?? [];
 
-  const functionUrl = `https://${LOCATION}-${PROJECT_ID}.cloudfunctions.net/${targetFunction}`;
+    if (activeTasks.length >= MAX_ACTIVE_TASKS) {
+      throw new functions.HttpsError(
+        "resource-exhausted",
+        `Maximum of ${MAX_ACTIVE_TASKS} active tasks reached. Cancel some before scheduling more.`
+      );
+    }
+    // ───────────────────────────────────────────────────────────────────────
 
-  const [task] = await tasksClient.createTask({
-    parent,
-    task: {
-      name: `${parent}/tasks/${taskName}-${request.auth.uid}`,
-      scheduleTime: { seconds: Math.floor(scheduleDate.getTime() / 1000) },
-      httpRequest: {
-        httpMethod: "POST",
-        url: functionUrl,
-        headers: { "Content-Type": "application/json" },
-        body: Buffer.from(JSON.stringify({ uid: request.auth.uid, ...data })).toString("base64"),
-        oidcToken: { serviceAccountEmail: `${PROJECT_ID}@appspot.gserviceaccount.com` },
+    const parent      = tasksClient.queuePath(PROJECT_ID, LOCATION, QUEUE_NAME);
+    const functionUrl = `https://${LOCATION}-${PROJECT_ID}.cloudfunctions.net/${targetFunction}`;
+
+    const [task] = await tasksClient.createTask({
+      parent,
+      task: {
+        name: `${parent}/tasks/${taskName}-${uid}`,
+        scheduleTime: { seconds: Math.floor(scheduleDate.getTime() / 1000) },
+        httpRequest: {
+          httpMethod:  "POST",
+          url:         functionUrl,
+          headers:     { "Content-Type": "application/json" },
+          body:        Buffer.from(JSON.stringify({ uid, ...data })).toString("base64"),
+          oidcToken:   { serviceAccountEmail: `${PROJECT_ID}@appspot.gserviceaccount.com` },
+        },
       },
-    },
-  });
+    });
 
-  logger.info("Task scheduled", { taskName: task.name, scheduleTime });
+    const taskId = task.name ?? "";
 
-  return {
-    taskId: task.name ?? "",
-    scheduledTime: scheduleTime,
-    queueName: QUEUE_NAME,
-  };
-});
+    // Track the task ID so we can enforce the per-user limit
+    await userTasksRef.set({ taskIds: [...activeTasks, taskId] }, { merge: true });
 
-export const cancelTaskFn = functions.onCall(async (request) => {
-  if (!request.auth) {
-    throw new functions.HttpsError("unauthenticated", "Must be signed in to cancel tasks.");
+    logger.info("Task scheduled", { uid, taskId, scheduleTime });
+
+    return { taskId, scheduledTime: scheduleTime, queueName: QUEUE_NAME };
   }
+);
 
-  const { taskId } = request.data as CancelTaskPayload;
+export const cancelTaskFn = functions.onCall(
+  { enforceAppCheck: true },
+  async (request) => {
+    if (!request.auth) {
+      throw new functions.HttpsError("unauthenticated", "Must be signed in to cancel tasks.");
+    }
 
-  // Verify the task name contains the caller's UID (simple ownership check).
-  if (!taskId.includes(request.auth.uid)) {
-    throw new functions.HttpsError("permission-denied", "You may only cancel your own tasks.");
+    const uid = request.auth.uid;
+    const { taskId } = request.data as CancelTaskPayload;
+
+    if (!taskId.includes(uid)) {
+      throw new functions.HttpsError("permission-denied", "You may only cancel your own tasks.");
+    }
+
+    await tasksClient.deleteTask({ name: taskId });
+
+    // Remove from the user's active-task list
+    const userTasksRef = db.doc(`scheduledTasks/${uid}`);
+    const snap = await userTasksRef.get();
+    const remaining = (snap.data()?.["taskIds"] ?? []).filter((id: string) => id !== taskId);
+    await userTasksRef.set({ taskIds: remaining });
+
+    logger.info("Task cancelled", { uid, taskId });
+
+    return { cancelled: true, taskId };
   }
-
-  await tasksClient.deleteTask({ name: taskId });
-  logger.info("Task cancelled", { taskId });
-
-  return { cancelled: true, taskId };
-});
+);
