@@ -5,7 +5,10 @@
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
   "types": "dist/index.d.ts",
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "rollup -c rollup.config.mjs",
     "test": "jest --passWithNoTests",
@@ -20,10 +23,15 @@
     "type": "git",
     "url": "https://github.com/hoeghen/backend-kit.git"
   },
-  "keywords": ["firebase", "google-drive", "email", "scheduler"],
+  "keywords": [
+    "firebase",
+    "google-drive",
+    "email",
+    "scheduler"
+  ],
   "license": "MIT",
   "peerDependencies": {
-    "firebase": "^10.0.0"
+    "firebase": "^10.14.1"
   },
   "dependencies": {
     "googleapis": "^140.0.0"
