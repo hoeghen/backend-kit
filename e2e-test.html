@@ -686,13 +686,28 @@ function dot(id, state) {
 // ─────────────────────────────────────────────────────────────
 // Boot
 // ─────────────────────────────────────────────────────────────
+// Pre-filled config — values are public identifiers, not secrets.
+const DEFAULT_CONFIG = {
+  apiKey:            'AIzaSyD2KHU8L9aLOmh1zsY_ioXbBscud4m7_t0',
+  authDomain:        'backendkit.firebaseapp.com',
+  projectId:         'backendkit',
+  storageBucket:     'backendkit.firebasestorage.app',
+  messagingSenderId: '847491504563',
+  appId:             '1:847491504563:web:af97dd6398be569c57d3c6',
+  region:            'us-central1',
+};
+
 window.addEventListener('load', () => {
-  loadConfig();
-  const cfg = readConfig();
-  if (cfg.apiKey && cfg.projectId) {
-    initFirebase(cfg);
-    toggleConfig(false);
-  }
+  // Seed fields with defaults if localStorage is empty
+  const saved = JSON.parse(localStorage.getItem('bk-config') || '{}');
+  const merged = { ...DEFAULT_CONFIG, ...saved };
+  FIELDS.forEach(f => {
+    const el = document.getElementById('cfg-' + f);
+    if (el && merged[f]) el.value = merged[f];
+  });
+
+  initFirebase(merged);
+  toggleConfig(false);
 });
 </script>
 </body>
