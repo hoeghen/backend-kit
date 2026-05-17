@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>@hoeghen/backend-kit — E2E Test Suite</title>
+
+  <!-- Firebase compat SDK (no bundler needed) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-functions-compat.js"></script>
+
+  <!-- Google API client (for Drive) -->
+  <script src="https://apis.google.com/js/api.js"></script>
+  <!-- Google Identity Services (modern OAuth token flow) -->
+  <script src="https://accounts.google.com/gsi/client" async></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2a2d3e;
+      --accent: #6c63ff;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --radius: 10px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    header {
+      max-width: 960px;
+      margin: 0 auto 28px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    header h1 { font-size: 1.3rem; font-weight: 600; }
+    header p  { font-size: .85rem; color: var(--muted); margin-top: 2px; }
+    .badge {
+      font-size: .7rem;
+      padding: 2px 8px;
+      border-radius: 20px;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    /* ── Config panel ───────────────────────────── */
+    .config-panel {
+      max-width: 960px;
+      margin: 0 auto 28px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .config-toggle {
+      width: 100%;
+      background: none;
+      border: none;
+      color: var(--text);
+      padding: 14px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      font-size: .9rem;
+      font-weight: 600;
+    }
+    .config-toggle:hover { background: rgba(255,255,255,.03); }
+    .config-body { padding: 0 20px 20px; display: none; }
+    .config-body.open { display: block; }
+
+    .config-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    @media (max-width: 600px) { .config-grid { grid-template-columns: 1fr; } }
+
+    label { font-size: .78rem; color: var(--muted); display: block; margin-bottom: 4px; }
+    input[type=text], input[type=email], textarea, select {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: .85rem;
+      font-family: inherit;
+    }
+    input:focus, textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
+    textarea { resize: vertical; min-height: 60px; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: .85rem;
+      font-weight: 600;
+      font-family: inherit;
+      transition: opacity .15s;
+    }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .btn:not(:disabled):hover { opacity: .85; }
+    .btn-primary   { background: var(--accent); color: #fff; }
+    .btn-secondary { background: var(--border);  color: var(--text); }
+    .btn-danger    { background: #7f1d1d; color: #fca5a5; }
+    .btn-sm { padding: 5px 12px; font-size: .78rem; }
+
+    /* ── Grid of service cards ──────────────────── */
+    .cards {
+      max-width: 960px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(440px, 1fr));
+      gap: 18px;
+    }
+    @media (max-width: 500px) { .cards { grid-template-columns: 1fr; } }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .card-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+      font-size: .9rem;
+    }
+    .icon { font-size: 1.1rem; }
+    .card-body { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+
+    /* Status dot */
+    .status-dot {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+    }
+    .status-dot.ok      { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .status-dot.error   { background: var(--red);   box-shadow: 0 0 6px var(--red); }
+    .status-dot.pending { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    /* Result box */
+    .result {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: .78rem;
+      font-family: "Cascadia Code", "Fira Code", monospace;
+      color: var(--muted);
+      min-height: 44px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 160px;
+      overflow-y: auto;
+    }
+    .result.ok    { color: var(--green); border-color: #14532d; }
+    .result.error { color: #fca5a5;      border-color: #7f1d1d; }
+
+    .row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+    .field { flex: 1; min-width: 140px; }
+
+    .divider { border: none; border-top: 1px solid var(--border); }
+
+    /* Auth strip at top of page */
+    .auth-strip {
+      max-width: 960px;
+      margin: 0 auto 18px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .auth-strip .user-info { font-size: .83rem; color: var(--muted); flex: 1; }
+    .auth-strip .user-info span { color: var(--text); font-weight: 600; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>@hoeghen/backend-kit</h1>
+    <p>End-to-end test suite — runs against your live Firebase project</p>
+  </div>
+  <span class="badge">E2E</span>
+</header>
+
+<!-- ── Config ─────────────────────────────────────────── -->
+<div class="config-panel">
+  <button class="config-toggle" onclick="toggleConfig()">
+    <span>⚙️ &nbsp;Project Configuration</span>
+    <span id="config-arrow">▼</span>
+  </button>
+  <div class="config-body open" id="config-body">
+    <div class="config-grid">
+      <div>
+        <label>Firebase API Key</label>
+        <input type="text" id="cfg-apiKey" placeholder="AIzaSy..." />
+      </div>
+      <div>
+        <label>Auth Domain</label>
+        <input type="text" id="cfg-authDomain" placeholder="project.firebaseapp.com" />
+      </div>
+      <div>
+        <label>Project ID</label>
+        <input type="text" id="cfg-projectId" placeholder="my-project" />
+      </div>
+      <div>
+        <label>Storage Bucket</label>
+        <input type="text" id="cfg-storageBucket" placeholder="my-project.appspot.com" />
+      </div>
+      <div>
+        <label>Messaging Sender ID</label>
+        <input type="text" id="cfg-messagingSenderId" placeholder="123456789" />
+      </div>
+      <div>
+        <label>App ID</label>
+        <input type="text" id="cfg-appId" placeholder="1:123:web:abc" />
+      </div>
+      <div>
+        <label>Google OAuth Client ID <small>(for Drive)</small></label>
+        <input type="text" id="cfg-clientId" placeholder="xxx.apps.googleusercontent.com" />
+      </div>
+      <div>
+        <label>Functions Region</label>
+        <input type="text" id="cfg-region" placeholder="us-central1" value="us-central1" />
+      </div>
+    </div>
+    <div class="row">
+      <button class="btn btn-primary" onclick="saveConfig()">💾 Save & Initialise</button>
+      <button class="btn btn-secondary" onclick="clearConfig()">Clear</button>
+      <small style="color:var(--muted); font-size:.75rem">Config is saved to localStorage — never sent anywhere.</small>
+    </div>
+  </div>
+</div>
+
+<!-- ── Auth strip ─────────────────────────────────────── -->
+<div class="auth-strip">
+  <div class="status-dot" id="auth-dot"></div>
+  <div class="user-info" id="auth-info">Not signed in — Firebase callables require authentication.</div>
+  <button class="btn btn-primary btn-sm" id="btn-signin" onclick="signIn()">Sign in with Google</button>
+  <button class="btn btn-danger  btn-sm" id="btn-signout" onclick="signOut()" style="display:none">Sign out</button>
+</div>
+
+<!-- ── Service cards ──────────────────────────────────── -->
+<div class="cards">
+
+  <!-- Firebase connectivity -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><span class="icon">🔥</span> Firebase</div>
+      <div class="status-dot" id="dot-firebase"></div>
+    </div>
+    <div class="card-body">
+      <p style="font-size:.82rem;color:var(--muted)">Verifies the SDK is initialised and the project is reachable.</p>
+      <button class="btn btn-primary" onclick="testFirebase()">Run test</button>
+      <div class="result" id="result-firebase">Waiting…</div>
+    </div>
+  </div>
+
+  <!-- Google Drive -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><span class="icon">📂</span> Google Drive</div>
+      <div class="status-dot" id="dot-drive"></div>
+    </div>
+    <div class="card-body">
+      <p style="font-size:.82rem;color:var(--muted)">OAuth sign-in then lists the 5 most recent files in your Drive.</p>
+      <div class="row">
+        <button class="btn btn-primary" onclick="signInDrive()">Connect Drive</button>
+        <button class="btn btn-secondary" onclick="listDriveFiles()">List files</button>
+        <button class="btn btn-danger btn-sm" onclick="signOutDrive()">Disconnect</button>
+      </div>
+      <div class="result" id="result-drive">Waiting…</div>
+    </div>
+  </div>
+
+  <!-- Email -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><span class="icon">✉️</span> Send Email</div>
+      <div class="status-dot" id="dot-email"></div>
+    </div>
+    <div class="card-body">
+      <p style="font-size:.82rem;color:var(--muted)">Calls the <code>sendEmail</code> Firebase Function (requires auth).</p>
+      <div class="row">
+        <div class="field">
+          <label>To</label>
+          <input type="email" id="email-to" placeholder="recipient@example.com" />
+        </div>
+      </div>
+      <div>
+        <label>Subject</label>
+        <input type="text" id="email-subject" value="backend-kit E2E test" />
+      </div>
+      <div>
+        <label>Body</label>
+        <textarea id="email-body">This is an automated E2E test from @hoeghen/backend-kit.</textarea>
+      </div>
+      <button class="btn btn-primary" onclick="testEmail()">Send email</button>
+      <div class="result" id="result-email">Waiting…</div>
+    </div>
+  </div>
+
+  <!-- Scheduler -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><span class="icon">⏰</span> Task Scheduler</div>
+      <div class="status-dot" id="dot-scheduler"></div>
+    </div>
+    <div class="card-body">
+      <p style="font-size:.82rem;color:var(--muted)">Calls <code>scheduleTask</code> and then immediately cancels it.</p>
+      <div class="row">
+        <div class="field">
+          <label>Target function</label>
+          <select id="sched-fn">
+            <option value="sendReminderEmail">sendReminderEmail</option>
+            <option value="generateWeeklyReport">generateWeeklyReport</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Delay (minutes)</label>
+          <input type="text" id="sched-delay" value="60" style="width:80px" />
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn btn-primary" onclick="testSchedule()">Schedule &amp; cancel</button>
+      </div>
+      <div class="result" id="result-scheduler">Waiting…</div>
+    </div>
+  </div>
+
+</div><!-- /cards -->
+
+
+<script>
+// ─────────────────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────────────────
+let app, auth, functions;
+let driveTokenClient, driveAccessToken = null;
+
+// ─────────────────────────────────────────────────────────────
+// Config helpers
+// ─────────────────────────────────────────────────────────────
+const FIELDS = ['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId','clientId','region'];
+
+function loadConfig() {
+  const saved = JSON.parse(localStorage.getItem('bk-config') || '{}');
+  FIELDS.forEach(f => {
+    const el = document.getElementById('cfg-' + f);
+    if (el && saved[f]) el.value = saved[f];
+  });
+}
+
+function readConfig() {
+  return Object.fromEntries(FIELDS.map(f => [f, document.getElementById('cfg-' + f)?.value.trim()]));
+}
+
+function saveConfig() {
+  const cfg = readConfig();
+  localStorage.setItem('bk-config', JSON.stringify(cfg));
+  initFirebase(cfg);
+  toggleConfig(false);
+}
+
+function clearConfig() {
+  localStorage.removeItem('bk-config');
+  FIELDS.forEach(f => { const el = document.getElementById('cfg-' + f); if (el) el.value = ''; });
+}
+
+function toggleConfig(forceOpen) {
+  const body  = document.getElementById('config-body');
+  const arrow = document.getElementById('config-arrow');
+  const open  = forceOpen !== undefined ? forceOpen : !body.classList.contains('open');
+  body.classList.toggle('open', open);
+  arrow.textContent = open ? '▲' : '▼';
+}
+
+// ─────────────────────────────────────────────────────────────
+// Firebase
+// ─────────────────────────────────────────────────────────────
+function initFirebase(cfg) {
+  try {
+    if (firebase.apps.length) firebase.apps[0].delete().then(() => _init(cfg));
+    else _init(cfg);
+  } catch(e) { setResult('firebase', 'error', e.message); }
+}
+
+function _init(cfg) {
+  app = firebase.initializeApp({
+    apiKey:            cfg.apiKey,
+    authDomain:        cfg.authDomain,
+    projectId:         cfg.projectId,
+    storageBucket:     cfg.storageBucket,
+    messagingSenderId: cfg.messagingSenderId,
+    appId:             cfg.appId,
+  });
+  auth      = firebase.auth();
+  functions = firebase.app().functions(cfg.region || 'us-central1');
+
+  auth.onAuthStateChanged(user => {
+    const dot  = document.getElementById('auth-dot');
+    const info = document.getElementById('auth-info');
+    const btnIn  = document.getElementById('btn-signin');
+    const btnOut = document.getElementById('btn-signout');
+    if (user) {
+      dot.className = 'status-dot ok';
+      info.innerHTML = `Signed in as <span>${user.displayName || user.email || user.uid}</span>`;
+      btnIn.style.display  = 'none';
+      btnOut.style.display = '';
+    } else {
+      dot.className = 'status-dot';
+      info.textContent = 'Not signed in — Firebase callables require authentication.';
+      btnIn.style.display  = '';
+      btnOut.style.display = 'none';
+    }
+  });
+
+  setResult('firebase', 'ok', `Firebase initialised ✓\nProject: ${cfg.projectId}`);
+  dot('firebase', 'ok');
+}
+
+async function testFirebase() {
+  if (!app) return setResult('firebase', 'error', 'Save config first.');
+  dot('firebase', 'pending');
+  setResult('firebase', '', 'Testing…');
+  try {
+    const cfg = readConfig();
+    setResult('firebase', 'ok',
+      `✓ SDK version : ${firebase.SDK_VERSION}\n` +
+      `✓ Project     : ${cfg.projectId}\n` +
+      `✓ Auth domain : ${cfg.authDomain}`
+    );
+    dot('firebase', 'ok');
+  } catch(e) {
+    setResult('firebase', 'error', e.message);
+    dot('firebase', 'error');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Firebase Auth
+// ─────────────────────────────────────────────────────────────
+async function signIn() {
+  if (!auth) return alert('Save your Firebase config first.');
+  const provider = new firebase.auth.GoogleAuthProvider();
+  provider.addScope('https://www.googleapis.com/auth/drive.readonly');
+  try {
+    await auth.signInWithPopup(provider);
+  } catch(e) {
+    alert('Sign-in failed: ' + e.message);
+  }
+}
+
+async function signOut() {
+  await auth?.signOut();
+}
+
+// ─────────────────────────────────────────────────────────────
+// Google Drive
+// ─────────────────────────────────────────────────────────────
+function signInDrive() {
+  const cfg = readConfig();
+  if (!cfg.clientId) return setResult('drive', 'error', 'Enter your Google OAuth Client ID in config first.');
+  dot('drive', 'pending');
+  setResult('drive', '', 'Opening OAuth consent…');
+
+  driveTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: cfg.clientId,
+    scope: 'https://www.googleapis.com/auth/drive.readonly',
+    callback: (resp) => {
+      if (resp.error) {
+        setResult('drive', 'error', resp.error);
+        dot('drive', 'error');
+        return;
+      }
+      driveAccessToken = resp.access_token;
+      setResult('drive', 'ok', '✓ Drive connected. Click "List files" to fetch.');
+      dot('drive', 'ok');
+    },
+  });
+  driveTokenClient.requestAccessToken();
+}
+
+async function listDriveFiles() {
+  if (!driveAccessToken) return setResult('drive', 'error', 'Connect Drive first.');
+  dot('drive', 'pending');
+  setResult('drive', '', 'Fetching files…');
+  try {
+    const res = await fetch(
+      'https://www.googleapis.com/drive/v3/files?pageSize=5&fields=files(id,name,mimeType,modifiedTime)&q=trashed%3Dfalse',
+      { headers: { Authorization: 'Bearer ' + driveAccessToken } }
+    );
+    const json = await res.json();
+    if (json.error) throw new Error(json.error.message);
+    const lines = json.files.map(f => `• ${f.name}\n  ${f.mimeType}\n  ${f.modifiedTime}`).join('\n\n');
+    setResult('drive', 'ok', `✓ ${json.files.length} file(s) returned:\n\n${lines}`);
+    dot('drive', 'ok');
+  } catch(e) {
+    setResult('drive', 'error', e.message);
+    dot('drive', 'error');
+  }
+}
+
+function signOutDrive() {
+  if (driveAccessToken) google.accounts.oauth2.revoke(driveAccessToken, () => {});
+  driveAccessToken = null;
+  driveTokenClient = null;
+  setResult('drive', '', 'Disconnected.');
+  dot('drive', '');
+}
+
+// ─────────────────────────────────────────────────────────────
+// Email
+// ─────────────────────────────────────────────────────────────
+async function testEmail() {
+  if (!functions) return setResult('email', 'error', 'Save config first.');
+  if (!auth?.currentUser) return setResult('email', 'error', 'Sign in first — the function requires auth.');
+
+  const to      = document.getElementById('email-to').value.trim();
+  const subject = document.getElementById('email-subject').value.trim();
+  const text    = document.getElementById('email-body').value.trim();
+
+  if (!to) return setResult('email', 'error', 'Enter a recipient address.');
+
+  dot('email', 'pending');
+  setResult('email', '', 'Calling sendEmail function…');
+  try {
+    const fn     = functions.httpsCallable('sendEmail');
+    const result = await fn({ to, subject, text });
+    setResult('email', 'ok', '✓ Email sent!\n\n' + JSON.stringify(result.data, null, 2));
+    dot('email', 'ok');
+  } catch(e) {
+    setResult('email', 'error', e.message);
+    dot('email', 'error');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Scheduler
+// ─────────────────────────────────────────────────────────────
+async function testSchedule() {
+  if (!functions) return setResult('scheduler', 'error', 'Save config first.');
+  if (!auth?.currentUser) return setResult('scheduler', 'error', 'Sign in first — the function requires auth.');
+
+  const targetFunction = document.getElementById('sched-fn').value;
+  const delayMin = parseInt(document.getElementById('sched-delay').value, 10) || 60;
+  const scheduleTime = new Date(Date.now() + delayMin * 60_000).toISOString();
+
+  dot('scheduler', 'pending');
+  setResult('scheduler', '', 'Scheduling task…');
+  try {
+    const scheduleFn = functions.httpsCallable('scheduleTask');
+    const scheduled  = await scheduleFn({
+      taskName: 'e2e-test-' + Date.now(),
+      scheduleTime,
+      targetFunction,
+      data: { test: true, uid: auth.currentUser.uid },
+    });
+
+    setResult('scheduler', '', `✓ Scheduled!\n\n${JSON.stringify(scheduled.data, null, 2)}\n\nCancelling…`);
+
+    const cancelFn   = functions.httpsCallable('cancelTask');
+    const cancelled  = await cancelFn({ taskId: scheduled.data.taskId });
+
+    setResult('scheduler', 'ok',
+      `✓ Scheduled then cancelled successfully.\n\n` +
+      `Schedule response:\n${JSON.stringify(scheduled.data, null, 2)}\n\n` +
+      `Cancel response:\n${JSON.stringify(cancelled.data, null, 2)}`
+    );
+    dot('scheduler', 'ok');
+  } catch(e) {
+    setResult('scheduler', 'error', e.message);
+    dot('scheduler', 'error');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// UI helpers
+// ─────────────────────────────────────────────────────────────
+function setResult(id, state, text) {
+  const el = document.getElementById('result-' + id);
+  if (!el) return;
+  el.textContent = text;
+  el.className   = 'result' + (state ? ' ' + state : '');
+}
+
+function dot(id, state) {
+  const el = document.getElementById('dot-' + id);
+  if (!el) return;
+  el.className = 'status-dot' + (state ? ' ' + state : '');
+}
+
+// ─────────────────────────────────────────────────────────────
+// Boot
+// ─────────────────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  loadConfig();
+  const cfg = readConfig();
+  if (cfg.apiKey && cfg.projectId) {
+    initFirebase(cfg);
+    toggleConfig(false);
+  }
+});
+</script>
+</body>
+</html>
