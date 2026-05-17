@@ -1,4 +1,4 @@
-# @hoeghen/services-kit
+# @hoeghen/backend-kit
 
 A TypeScript client SDK for Firebase, Google Drive, transactional email, and Cloud Task scheduling.
 
@@ -18,7 +18,7 @@ A TypeScript client SDK for Firebase, Google Drive, transactional email, and Clo
 # Authenticate with GitHub Packages first
 npm login --registry=https://npm.pkg.github.com --scope=@hoeghen
 
-npm install @hoeghen/services-kit firebase
+npm install @hoeghen/backend-kit firebase
 ```
 
 ## Quick start
@@ -26,7 +26,7 @@ npm install @hoeghen/services-kit firebase
 ### 1 — Initialise Firebase
 
 ```ts
-import { getFirebaseApp } from "@hoeghen/services-kit";
+import { getFirebaseApp } from "@hoeghen/backend-kit";
 
 // Call once at app startup with values from your .env
 getFirebaseApp({
@@ -42,7 +42,7 @@ getFirebaseApp({
 ### 2 — Google Drive
 
 ```ts
-import { initGoogleDrive, signInToGoogle, listDriveFiles } from "@hoeghen/services-kit";
+import { initGoogleDrive, signInToGoogle, listDriveFiles } from "@hoeghen/backend-kit";
 
 // Load the gapi script in index.html, then:
 await initGoogleDrive(import.meta.env.VITE_GOOGLE_CLIENT_ID);
@@ -55,12 +55,12 @@ console.log(files);
 ### 3 — Send email
 
 ```ts
-import { sendEmail } from "@hoeghen/services-kit";
+import { sendEmail } from "@hoeghen/backend-kit";
 
 // User must be signed in to Firebase Auth
 await sendEmail({
   to: "recipient@example.com",
-  subject: "Hello from services-kit",
+  subject: "Hello from backend-kit",
   text: "Plain-text body",
   html: "<p>HTML body</p>",
 });
@@ -69,7 +69,7 @@ await sendEmail({
 ### 4 — Schedule a task
 
 ```ts
-import { scheduleTask, cancelTask } from "@hoeghen/services-kit";
+import { scheduleTask, cancelTask } from "@hoeghen/backend-kit";
 
 const { taskId } = await scheduleTask({
   taskName: "weekly-digest-user-42",

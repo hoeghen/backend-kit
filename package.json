@@ -1,5 +1,5 @@
 {
-  "name": "@hoeghen/services-kit",
+  "name": "@hoeghen/backend-kit",
   "version": "0.1.0",
   "description": "Client SDK for Firebase, Google Drive, email, and task scheduling",
   "main": "dist/index.js",
@@ -18,7 +18,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/hoeghen/services-kit.git"
+    "url": "https://github.com/hoeghen/backend-kit.git"
   },
   "keywords": ["firebase", "google-drive", "email", "scheduler"],
   "license": "MIT",
